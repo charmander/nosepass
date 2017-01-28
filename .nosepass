@@ -1,0 +1,27 @@
+# The contents of this file should be a list of entries, one per line.
+# Each entry consists of a site name and any number of key=value parameters,
+# space-separated.
+#
+# The parameters are as follows:
+#
+#       count: The number of characters in the generated password.
+#
+#         set: The character set used to generate the password, as a string of
+#              individual characters and ranges. Ranges are represented as a-b,
+#              where a is the first character in the range and b is the last.
+#              Hyphens and backslashes can be escaped using backslashes.
+#
+#        work: The bcrypt logarithmic work factor, from 4 to 31.
+#
+#   increment: An integer. Defaults to 0. Increment it to generate a new
+#              password for the site, e.g. in case the previous one was
+#              compromised.
+#
+# “default” is a special name that defines default settings.
+# It must be present and the first entry.
+
+default count=20 set=!-~ work=13
+
+# Override the default settings for sites as necessary.
+
+#bank count=8 set=a-z
