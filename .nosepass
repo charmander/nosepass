@@ -11,7 +11,7 @@
 #              where a is the first character in the range and b is the last.
 #              Hyphens and backslashes can be escaped using backslashes.
 #
-#        work: The bcrypt logarithmic work factor, from 4 to 31.
+#      rounds: The number of key derivation rounds.
 #
 #   increment: An integer. Defaults to 0. Increment it to generate a new
 #              password for the site, e.g. in case the previous one was
@@ -20,8 +20,8 @@
 # “default” is a special name that defines default settings.
 # It must be present and the first entry.
 
-default count=20 set=!-~ work=13
+# 20 printable non-space characters, 200 KDF rounds
+default count=20 set=!-~ rounds=200
 
 # Override the default settings for sites as necessary.
-
 #bank count=8 set=a-z

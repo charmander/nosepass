@@ -1,9 +1,16 @@
 #include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
+#include <unistd.h>
+
+#include "bcrypt/bcrypt_pbkdf.h"
+#include "bcrypt/explicit_bzero.h"
+#include "chacha/ecrypt-sync.h"
 
 #define S_(x) #x
 #define S(x) S_(x)
@@ -12,24 +19,37 @@
 
 #define DEFAULT_SET "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 #define DEFAULT_COUNT 20
-#define DEFAULT_WORK 13
+#define DEFAULT_ROUNDS 200
 
 #define MAX_COUNT_GENERATED 1024
 
 #define PREFIX_COUNT "count="
 #define PREFIX_SET "set="
-#define PREFIX_WORK "work="
+#define PREFIX_ROUNDS "rounds="
 #define PREFIX_INCREMENT "increment="
 
 _Static_assert(' ' == 32 && '~' == 126, "character set is normal");
+_Static_assert(DEFAULT_COUNT > 0 && DEFAULT_COUNT <= MAX_COUNT_GENERATED, "default count is within bounds");
+_Static_assert(MAX_COUNT_GENERATED <= UINT_MAX, "maximum count is within bounds");
 
 struct schema {
-	size_t count;
-	size_t work;
-	size_t increment;
-	size_t set_size;
-	char set[96];
+	uint64_t increment;
+	unsigned int count;
+	unsigned int rounds;
+	uint8_t set_size;
+	char set[95];
 };
+
+/*
+ * Gets the next highest power of two, minus one.
+ */
+__attribute__ ((const, warn_unused_result))
+static uint8_t get_mask(uint8_t n) {
+	n |= n >> 1;
+	n |= n >> 2;
+	n |= n >> 4;
+	return n;
+}
 
 __attribute__((warn_unused_result))
 static char const* parse_count(char const* const line, size_t* const out) {
@@ -86,7 +106,7 @@ static char const* parse_set(char const* line, struct schema* const result) {
 		}
 
 		if (c & 0x80) {
-			fprintf(stderr, "expected printable ASCII but found '\\x%2x' instead\n", (unsigned int)(unsigned char)c);
+			fprintf(stderr, "expected printable ASCII but found '\\x%02x' instead\n", (unsigned int)(unsigned char)c);
 			return NULL;
 		}
 
@@ -110,7 +130,7 @@ static char const* parse_set(char const* line, struct schema* const result) {
 			}
 
 			if (end & 0x80) {
-				fprintf(stderr, "expected printable ASCII but found '\\x%2x' instead\n", (unsigned int)(unsigned char)end);
+				fprintf(stderr, "expected printable ASCII but found '\\x%02x' instead\n", (unsigned int)(unsigned char)end);
 				return NULL;
 			}
 
@@ -138,8 +158,6 @@ static char const* parse_set(char const* line, struct schema* const result) {
 		}
 	}
 
-	result->set[result->set_size] = '\0';
-
 	if (result->set_size < 2) {
 		fputs("character set must contain at least two characters\n", stderr);
 		return NULL;
@@ -152,7 +170,7 @@ __attribute__((warn_unused_result))
 static int parse_schema_line(char const* line, struct schema* const result) {
 	int has_count = 0;
 	int has_set = 0;
-	int has_work = 0;
+	int has_rounds = 0;
 	int has_increment = 0;
 
 	while (*line != '\0') {
@@ -171,23 +189,25 @@ static int parse_schema_line(char const* line, struct schema* const result) {
 
 			has_count = 1;
 
-			char const* const parse_end = parse_count(line + (sizeof PREFIX_COUNT - 1), &result->count);
+			size_t count;
+			char const* const parse_end = parse_count(line + (sizeof PREFIX_COUNT - 1), &count);
 
 			if (parse_end == NULL) {
 				fprintf(stderr, "expected count, but found '%s' instead\n", line);
 				return 0;
 			}
 
-			if (result->count == 0) {
+			if (count == 0) {
 				fputs("character count must be greater than 0\n", stderr);
 				return 0;
 			}
 
-			if (result->count > MAX_COUNT_GENERATED) {
+			if (count > MAX_COUNT_GENERATED) {
 				fputs("character count must be at most " S(MAX_COUNT_GENERATED) "\n", stderr);
 				return 0;
 			}
 
+			result->count = (unsigned int)count;
 			line = parse_end;
 		} else if (strncmp(line, PREFIX_SET, sizeof PREFIX_SET - 1) == 0) {
 			if (has_set) {
@@ -200,31 +220,33 @@ static int parse_schema_line(char const* line, struct schema* const result) {
 			if ((line = parse_set(line + (sizeof PREFIX_SET - 1), result)) == NULL) {
 				return 0;
 			}
-		} else if (strncmp(line, PREFIX_WORK, sizeof PREFIX_WORK - 1) == 0) {
-			if (has_work) {
-				fputs("multiple settings for work factor\n", stderr);
+		} else if (strncmp(line, PREFIX_ROUNDS, sizeof PREFIX_ROUNDS - 1) == 0) {
+			if (has_rounds) {
+				fputs("multiple settings for rounds\n", stderr);
 				return 0;
 			}
 
-			has_work = 1;
+			has_rounds = 1;
 
-			char const* const parse_end = parse_count(line + (sizeof PREFIX_WORK - 1), &result->work);
+			size_t rounds;
+			char const* const parse_end = parse_count(line + (sizeof PREFIX_ROUNDS - 1), &rounds);
 
 			if (parse_end == NULL) {
-				fprintf(stderr, "expected work factor, but found '%s' instead\n", line);
+				fprintf(stderr, "expected number of rounds, but found '%s' instead\n", line);
 				return 0;
 			}
 
-			if (result->work < 4) {
-				fputs("work factor must be at least 4\n", stderr);
+			if (rounds < 1) {
+				fputs("number of rounds must be at least 1\n", stderr);
 				return 0;
 			}
 
-			if (result->work > 31) {
-				fputs("work factor must be at most 31\n", stderr);
+			if (rounds > UINT_MAX) {
+				fputs("number of rounds must be at most " S(UINT_MAX) "\n", stderr);
 				return 0;
 			}
 
+			result->rounds = (unsigned int)rounds;
 			line = parse_end;
 		} else if (strncmp(line, PREFIX_INCREMENT, sizeof PREFIX_INCREMENT - 1) == 0) {
 			if (has_increment) {
@@ -248,7 +270,7 @@ static int parse_schema_line(char const* line, struct schema* const result) {
 
 			line = parse_end;
 		} else {
-			fprintf(stderr, "expected one of " PREFIX_COUNT ", " PREFIX_SET ", " PREFIX_WORK ", or " PREFIX_INCREMENT ", but found '%s' instead\n", line);
+			fprintf(stderr, "expected one of " PREFIX_COUNT ", " PREFIX_SET ", " PREFIX_ROUNDS ", or " PREFIX_INCREMENT ", but found '%s' instead\n", line);
 			return 0;
 		}
 	}
@@ -300,18 +322,6 @@ static int parse_schema(char const* const name, FILE* const input, struct schema
 	}
 }
 
-static void log_schema(struct schema const* const schema) {
-	fprintf(
-		stderr,
-		"schema with count=%zd, work=%zd, increment=%zd, set_size=%zd, set=%s\n",
-		schema->count, schema->work, schema->increment, schema->set_size, schema->set
-	);
-}
-
-static void show_usage() {
-	fputs("Usage: nosepass <site-name>\n", stderr);
-}
-
 __attribute__((warn_unused_result))
 static FILE* open_config_file(void) {
 	char const* const home_path = getenv("HOME");
@@ -344,46 +354,172 @@ static FILE* open_config_file(void) {
 	return config;
 }
 
+__attribute__ ((warn_unused_result))
+static char* password_read(char* const s, size_t const size) {
+	struct termios original_termios;
+	int termattr_result = tcgetattr(STDIN_FILENO, &original_termios);
+
+	if (termattr_result == 0) {
+		struct termios modified_termios = original_termios;
+		modified_termios.c_lflag &= ~(unsigned int)ECHO;
+		termattr_result = tcsetattr(STDIN_FILENO, TCSAFLUSH, &modified_termios);
+	}
+
+	fputs("Password: ", stderr);
+
+	char* const result = fgets(s, (int)size, stdin);
+
+	if (termattr_result == 0) {
+		putc('\n', stderr);
+		tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_termios);
+	}
+
+	return result;
+}
+
+static void show_usage() {
+	fputs("Usage: nosepass <site-name>\n", stderr);
+}
+
 int main(int const argc, char const* const argv[]) {
 	if (argc != 2) {
 		show_usage();
 		return EXIT_FAILURE;
 	}
 
+	char const* const site_name = argv[1];
+
 	struct schema schema;
 	schema.count = DEFAULT_COUNT;
-	schema.work = DEFAULT_WORK;
+	schema.rounds = DEFAULT_ROUNDS;
 	schema.increment = 0;
 	schema.set_size = sizeof DEFAULT_SET - 1;
 	_Static_assert(sizeof DEFAULT_SET - 1 > 0 && sizeof DEFAULT_SET - 1 <= sizeof schema.set, "default character set fits in schema");
 	memcpy(schema.set, DEFAULT_SET, sizeof DEFAULT_SET - 1);
 
-	FILE* const config = open_config_file();
+	{
+		FILE* const config = open_config_file();
 
-	if (config == NULL) {
-		return EXIT_FAILURE;
-	}
+		if (config == NULL) {
+			return EXIT_FAILURE;
+		}
 
-	if (!parse_schema("default", config, &schema)) {
+		if (!parse_schema("default", config, &schema)) {
+			fclose(config);
+			return EXIT_FAILURE;
+		}
+
+		if (fseek(config, 0L, SEEK_SET) != 0) {
+			perror("failed to seek configuration file");
+			fclose(config);
+			return EXIT_FAILURE;
+		}
+
+		if (!parse_schema(site_name, config, &schema)) {
+			fclose(config);
+			return EXIT_FAILURE;
+		}
+
 		fclose(config);
+	}
+
+	{
+		double const bits = schema.count * log2(schema.set_size);
+		char const* const color =
+			bits >= 128.0 ? "\x1b[32m" :
+			bits >= 92.0 ? "\x1b[33m" :
+			"\x1b[31m";
+
+		fprintf(stderr, "%s●\x1b[0m generating password equivalent to %.0f bits\n", color, bits);
+	}
+
+	uint8_t key[32];
+
+	{
+		char password[1024];
+
+		if (password_read(password, sizeof password) == NULL) {
+			fputs("failed to read password\n", stderr);
+			return EXIT_FAILURE;
+		}
+
+		size_t password_length = strlen(password);
+
+		if (password[password_length - 1] == '\n') {
+			password_length--;
+		} else if (password_length > 1022) {
+			/* avoid silent truncation at 1023 characters */
+			fputs("the maximum password length is 1022 characters\n", stderr);
+			return EXIT_FAILURE;
+		}
+
+		if (password_length == 0) {
+			fputs("a password is required\n", stderr);
+			return EXIT_FAILURE;
+		}
+
+		if (bcrypt_pbkdf(password, password_length, (unsigned char const*)site_name, strlen(site_name), key, sizeof key, schema.rounds) != 0) {
+			fputs("bcrypt_pbkdf failed\n", stderr);
+			return EXIT_FAILURE;
+		}
+
+		explicit_bzero(password, sizeof password);
+	}
+
+	uint8_t const nonce[8] = {
+		(uint8_t)schema.increment,
+		(uint8_t)(schema.increment >> 8),
+		(uint8_t)(schema.increment >> 16),
+		(uint8_t)(schema.increment >> 24),
+		(uint8_t)(schema.increment >> 32),
+		(uint8_t)(schema.increment >> 40),
+		(uint8_t)(schema.increment >> 48),
+		(uint8_t)(schema.increment >> 56),
+	};
+
+	ECRYPT_ctx ctx;
+
+	ECRYPT_init();
+	ECRYPT_keysetup(&ctx, key, 8 * sizeof key, 8 * sizeof nonce);
+	ECRYPT_ivsetup(&ctx, nonce);
+
+	size_t i = 0;
+	uint8_t mask = get_mask(schema.set_size);
+
+	char generated_password[MAX_COUNT_GENERATED];
+
+	{
+		uint8_t generated_bytes[ECRYPT_BLOCKLENGTH];
+
+		while (i < schema.count) {
+			ECRYPT_keystream_blocks(&ctx, generated_bytes, 1);
+
+			for (size_t j = 0; j < ECRYPT_BLOCKLENGTH; j++) {
+				uint8_t const character_index = mask & generated_bytes[j];
+
+				if (character_index < schema.set_size) {
+					generated_password[i] = schema.set[character_index];
+					i++;
+
+					if (i == schema.count) {
+						break;
+					}
+				}
+			}
+		}
+
+		explicit_bzero(generated_bytes, ECRYPT_BLOCKLENGTH);
+	}
+
+	size_t const written = fwrite(generated_password, sizeof(char), schema.count, stdout);
+
+	explicit_bzero(generated_password, MAX_COUNT_GENERATED);
+
+	if (written != schema.count) {
+		fputs("failed to write output\n", stderr);
 		return EXIT_FAILURE;
 	}
 
-	if (!parse_schema(argv[1], config, &schema)) {
-		fclose(config);
-		return EXIT_FAILURE;
-	}
-
-	double const bits = schema.count * log2(schema.set_size);
-	char const* const color =
-		bits >= 128.0 ? "\x1b[32m" :
-		bits >= 92.0 ? "\x1b[33m" :
-		"\x1b[31m";
-
-	fprintf(stderr, "%s●\x1b[0m generating password with maximum of %.2f bits\n", color, bits);
-
-	fclose(config);
-
-	log_schema(&schema);
+	fputc('\n', stderr);
 	return EXIT_SUCCESS;
 }
