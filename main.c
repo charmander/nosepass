@@ -72,11 +72,13 @@ static char const* parse_count(char const* const line, size_t* const out) {
 			return NULL;
 		}
 
-		if (n > SIZE_MAX / 10) {
+		size_t const digit_value = (size_t)(c - '0');
+
+		if (n > SIZE_MAX / 10 || 10 * n > SIZE_MAX - digit_value) {
 			return NULL;
 		}
 
-		n = 10 * n + (size_t)(c - '0');
+		n = 10 * n + digit_value;
 	}
 }
 
