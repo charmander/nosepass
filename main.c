@@ -520,6 +520,7 @@ int main(int const argc, char const* const argv[]) {
 		return EXIT_FAILURE;
 	}
 
+	fflush(stdout);
 	fputc('\n', stderr);
 	return EXIT_SUCCESS;
 }
