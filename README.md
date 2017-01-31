@@ -26,7 +26,8 @@ A function like this might add convenience:
 
 ```zsh
 np() {
-	local p=$(nosepass "$@") || return 1
+	local p
+	p=$(nosepass "$@") || return 1
 	echo 'Password copied!'
 	printf '%s' "$p" | xsel -nbi || return 1
 }
