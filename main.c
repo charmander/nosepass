@@ -107,7 +107,7 @@ static char const* parse_set(char const* line, struct schema* const result) {
 			continue;
 		}
 
-		if (c & 0x80) {
+		if (c < ' ' || c & 0x80) {
 			fprintf(stderr, "expected printable ASCII but found '\\x%02x' instead\n", (unsigned int)(unsigned char)c);
 			return NULL;
 		}
