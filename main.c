@@ -379,7 +379,7 @@ static char* password_read(char* const s, size_t const size) {
 	return result;
 }
 
-static void show_usage() {
+static void show_usage(void) {
 	fputs("Usage: nosepass <site-name>\n", stderr);
 }
 
