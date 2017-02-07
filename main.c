@@ -169,7 +169,7 @@ static char const* parse_set(char const* line, struct schema* const result) {
 }
 
 __attribute__((warn_unused_result))
-static int parse_schema_line(char const* line, struct schema* const result) {
+static int parse_schema_line(char const* line, struct schema* const restrict result) {
 	int has_count = 0;
 	int has_set = 0;
 	int has_rounds = 0;
@@ -281,7 +281,7 @@ static int parse_schema_line(char const* line, struct schema* const result) {
 }
 
 __attribute__((warn_unused_result))
-static int parse_schema(char const* const name, FILE* const input, struct schema* result) {
+static int parse_schema(char const* const name, FILE* const input, struct schema* restrict result) {
 	size_t const name_length = strlen(name);
 
 	char line[1024];
