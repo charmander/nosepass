@@ -1,7 +1,7 @@
 AS := as
 CC := clang
 WARNINGS := -Wall -Wextra -Weverything -Werror -pedantic -Wno-disabled-macro-expansion -Wno-error=padded
-CFLAGS := -std=c11 -O2 -march=native -D_DEFAULT_SOURCE
+CFLAGS := -std=c11 -O2 -march=native -D_DEFAULT_SOURCE -flto
 CFLAGS_nosepass := $(WARNINGS)
 LDFLAGS := -lm
 
