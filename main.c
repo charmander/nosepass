@@ -51,7 +51,7 @@ static uint8_t get_mask(uint8_t n) {
 	return n;
 }
 
-__attribute__((warn_unused_result))
+__attribute__ ((warn_unused_result))
 static char const* parse_count(char const* const line, size_t* const out) {
 	char const* p = line;
 	size_t n = 0;
@@ -82,7 +82,7 @@ static char const* parse_count(char const* const line, size_t* const out) {
 	}
 }
 
-__attribute__((warn_unused_result))
+__attribute__ ((warn_unused_result))
 static char const* parse_set(char const* line, struct schema* const result) {
 	unsigned char in_set[95];
 	memset(in_set, 0, sizeof in_set);
@@ -168,7 +168,7 @@ static char const* parse_set(char const* line, struct schema* const result) {
 	return line;
 }
 
-__attribute__((warn_unused_result))
+__attribute__ ((warn_unused_result))
 static int parse_schema_line(char const* line, struct schema* const restrict result) {
 	int has_count = 0;
 	int has_set = 0;
@@ -280,7 +280,7 @@ static int parse_schema_line(char const* line, struct schema* const restrict res
 	return 1;
 }
 
-__attribute__((warn_unused_result))
+__attribute__ ((warn_unused_result))
 static int parse_schema(char const* const name, FILE* const input, struct schema* restrict result) {
 	size_t const name_length = strlen(name);
 
@@ -324,7 +324,7 @@ static int parse_schema(char const* const name, FILE* const input, struct schema
 	}
 }
 
-__attribute__((warn_unused_result))
+__attribute__ ((warn_unused_result))
 static FILE* open_config_file(void) {
 	char const* const home_path = getenv("HOME");
 
