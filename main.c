@@ -258,18 +258,20 @@ static int parse_schema_line(char const* line, struct schema* const restrict res
 
 			has_increment = 1;
 
-			char const* const parse_end = parse_count(line + (sizeof PREFIX_INCREMENT - 1), &result->increment);
+			size_t increment;
+			char const* const parse_end = parse_count(line + (sizeof PREFIX_INCREMENT - 1), &increment);
 
 			if (parse_end == NULL) {
 				fprintf(stderr, "expected increment, but found '%s' instead\n", line);
 				return 0;
 			}
 
-			if (result->increment > UINT64_MAX) {
+			if (increment > UINT64_MAX) {
 				fprintf(stderr, "increment must be at most " PRIu64 "\n", UINT64_MAX);
 				return 0;
 			}
 
+			result->increment = (uint64_t)increment;
 			line = parse_end;
 		} else {
 			fprintf(stderr, "expected one of " PREFIX_COUNT ", " PREFIX_SET ", " PREFIX_ROUNDS ", or " PREFIX_INCREMENT ", but found '%s' instead\n", line);
