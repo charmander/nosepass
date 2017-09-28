@@ -244,7 +244,7 @@ static int parse_schema_line(char const* line, struct schema* const restrict res
 			}
 
 			if (rounds > UINT_MAX) {
-				fputs("number of rounds must be at most " S(UINT_MAX) "\n", stderr);
+				fprintf(stderr, "number of rounds must be at most %u\n", UINT_MAX);
 				return 0;
 			}
 
@@ -267,7 +267,7 @@ static int parse_schema_line(char const* line, struct schema* const restrict res
 			}
 
 			if (increment > UINT64_MAX) {
-				fprintf(stderr, "increment must be at most " PRIu64 "\n", UINT64_MAX);
+				fprintf(stderr, "increment must be at most %" PRIu64 "\n", UINT64_MAX);
 				return 0;
 			}
 
