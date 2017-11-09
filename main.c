@@ -107,7 +107,7 @@ static char const* parse_set(char const* line, struct schema* const result) {
 			continue;
 		}
 
-		if (c < ' ' || c & 0x80) {
+		if (c < ' ' || c >= '\x7f') {
 			fprintf(stderr, "expected printable ASCII but found '\\x%02x' instead\n", (unsigned int)(unsigned char)c);
 			return NULL;
 		}
@@ -131,7 +131,7 @@ static char const* parse_set(char const* line, struct schema* const result) {
 				return NULL;
 			}
 
-			if (end & 0x80) {
+			if (end < ' ' || end >= '\x7f') {
 				fprintf(stderr, "expected printable ASCII but found '\\x%02x' instead\n", (unsigned int)(unsigned char)end);
 				return NULL;
 			}
