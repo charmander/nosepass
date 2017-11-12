@@ -29,7 +29,7 @@ np() {
 	local p
 	p=$(nosepass "$@") || return 1
 	echo 'Password copied!'
-	printf '%s' "$p" | xsel -nbi || return 1
+	printf '%s' "$p" | xsel -nbi
 }
 ```
 
