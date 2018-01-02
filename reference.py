@@ -1,22 +1,9 @@
 import itertools
-from typing import Sequence
+from typing import Iterator, Sequence
 
 import bcrypt
-from cffi import FFI
-
-
-ffi = FFI()
-
-ffi.cdef(
-	"""
-	int crypto_stream_chacha20_xor_ic(unsigned char *c, const unsigned char *m,
-	                                  unsigned long long mlen,
-	                                  const unsigned char *n, uint64_t ic,
-	                                  const unsigned char *k);
-	"""
-)
-
-lib = ffi.dlopen('sodium')
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
+from cryptography.hazmat.backends import default_backend
 
 
 _PRINTABLE = bytes(range(33, 127)).decode('ascii')
@@ -27,27 +14,26 @@ def get_mask(n: int) -> int:
 	return (1 << n.bit_length()) - 1
 
 
+def get_stream(key: bytes, nonce: bytes) -> Iterator[int]:
+	algorithm = algorithms.ChaCha20(key, nonce + b'\0' * 8)
+	cipher = Cipher(algorithm, mode=None, backend=default_backend())
+	encryptor = cipher.encryptor()
+
+	while True:
+		yield from encryptor.update(_EMPTY_BLOCK)
+
+
 def get_password(kdf_rounds: int, character_set: Sequence[str], length: int, increment: int, site_name: str, master_password: str) -> str:
 	set_size = len(character_set)
 	mask = get_mask(set_size)
 	nonce = increment.to_bytes(8, 'little')
 
 	key = bcrypt.kdf(master_password.encode('utf-8'), site_name.encode('utf-8'), 32, kdf_rounds)
-	block = ffi.new('unsigned char[64]')
 
-	result = []
+	byte_stream = get_stream(key, nonce)
+	character_stream = (character_set[b & mask] for b in byte_stream if b & mask < set_size)
 
-	for i in itertools.count():
-		lib.crypto_stream_chacha20_xor_ic(block, _EMPTY_BLOCK, len(block), nonce, i, key)
-
-		for c in block:
-			character_index = c & mask
-
-			if character_index < set_size:
-				result.append(character_set[character_index])
-
-				if len(result) == length:
-					return ''.join(result)
+	return ''.join(itertools.islice(character_stream, length))
 
 
 if __name__ == '__main__':
