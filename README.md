@@ -1,6 +1,6 @@
-# nosepass
-
 A small deterministic password generator! Produces unique passwords based on a master password and site name.
+
+**Deprecated:** I recommend fully stateful password managers instead.
 
 ## Installation
 
@@ -20,17 +20,6 @@ $ nosepass test
 ● generating password equivalent to 131 bits
 Password: ****
 .,reHgb9^$Z|6.7)nNU>
-```
-
-A function like this might add convenience:
-
-```zsh
-np() {
-	local p
-	p=$(nosepass "$@") || return 1
-	echo 'Password copied!'
-	printf '%s' "$p" | xsel -nbi
-}
 ```
 
 ## Method
